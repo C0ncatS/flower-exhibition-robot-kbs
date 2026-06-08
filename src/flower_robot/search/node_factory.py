@@ -3,14 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from flower_robot.domain.models import Scenario
-from flower_robot.domain.position import manhattan
 from flower_robot.domain.state import (
     LoadState,
     NeedsState,
-    has_needed_bouquets,
-    has_unload_items,
     is_valid_load,
-    load_contains,
     load_count,
     normalize_load,
     scenario_needs,
@@ -48,9 +44,7 @@ class NodeFactory:
         node_id: int,
         target: tuple[int, int],
         direction: str,
-    ) -> Node | None:
-        if not self._is_useful_move(parent, tuple(target)):
-            return None
+    ) -> Node:
         return self._node(
             node_id=node_id,
             position=tuple(target),
@@ -63,16 +57,8 @@ class NodeFactory:
             action_valid=True,
         )
 
-    def load(self, parent: Node, node_id: int, option: LoadState) -> Node | None:
+    def load(self, parent: Node, node_id: int, option: LoadState) -> Node:
         load = normalize_load(option)
-        valid = (
-            len(parent["load"]) == 0
-            and is_valid_load(load)
-            and load_count(load) <= self._scenario.max_load
-            and has_needed_bouquets(tuple(parent["needs"]), load)
-        )
-        if not valid:
-            return None
         return self._node(
             node_id=node_id,
             position=tuple(parent["pos"]),
@@ -85,45 +71,16 @@ class NodeFactory:
             action_valid=True,
         )
 
-    def _is_useful_move(self, parent: Node, target: tuple[int, int]) -> bool:
-        current = tuple(parent["pos"])
-        targets = self._movement_targets(parent)
-        return any(
-            manhattan(target, destination) < manhattan(current, destination)
-            for destination in targets
-        )
-
-    def _movement_targets(self, parent: Node) -> tuple[tuple[int, int], ...]:
-        load = tuple(parent["load"])
-        needs = tuple(parent["needs"])
-        if not load:
-            return (self._scenario.warehouse.as_tuple(),) if needs else ()
-        carried = {(flower_type, color) for flower_type, color, _ in load}
-        return tuple(
-            sorted(
-                {
-                    position
-                    for _, flower_type, position, color, _ in needs
-                    if (flower_type, color) in carried
-                }
-            )
-        )
-
     def unload(
         self,
         parent: Node,
         node_id: int,
         pavilion_id: str,
         option: LoadState,
-    ) -> Node | None:
+    ) -> Node:
         unload = normalize_load(option)
         needs = tuple(parent["needs"])
         load = tuple(parent["load"])
-        valid = load_contains(load, unload) and has_unload_items(
-            needs, pavilion_id, unload
-        )
-        if not valid:
-            return None
         next_load = subtract_load(load, unload)
         next_needs = subtract_needs(needs, pavilion_id, unload)
         return self._node(

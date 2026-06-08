@@ -8,12 +8,8 @@ class StrategyFact(Fact):
     """Search strategy selector."""
 
 
-class CostLevelFact(Fact):
-    """Current f-cost level considered by A*."""
-
-
-class CostSuccessorFact(Fact):
-    """Precomputed successor relation over integer f-cost levels."""
+class LowestOpenNodeFact(Fact):
+    """Tracks the open node with the lowest f-cost for A*."""
 
 
 class GridFact(Fact):

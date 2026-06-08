@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -15,10 +16,9 @@ from flower_robot.engine.operators import OperatorRules
 from flower_robot.engine.strategy import StrategyRules
 from flower_robot.engine.tree import TreeRules
 from flower_robot.facts.schema import (
-    CostLevelFact,
-    CostSuccessorFact,
     GridFact,
     LoadOptionFact,
+    LowestOpenNodeFact,
     MaxLoadFact,
     Node,
     PavilionFact,
@@ -52,6 +52,7 @@ class FlowerRobotEngine(
         self.tree_order: list[int] = []
         self.best_cost_by_state: dict[tuple[Any, ...], int] = {}
         self.solution: dict[str, Any] | None = None
+        self.elapsed_seconds: float | None = None
         self._next_node_id = 0
         super().__init__()
 
@@ -60,6 +61,7 @@ class FlowerRobotEngine(
         self.tree_order = []
         self.best_cost_by_state = {}
         self.solution = None
+        self.elapsed_seconds = None
         self._next_node_id = 0
         super().reset(**kwargs)
 
@@ -70,13 +72,12 @@ class FlowerRobotEngine(
         self.best_cost_by_state[self._state_key(root)] = root["g"]
 
         yield StrategyFact(name=self.strategy_name)
-        yield CostLevelFact(value=0)
         yield GridFact(width=self.scenario.width, height=self.scenario.height)
         yield WarehouseFact(position=self.scenario.warehouse.as_tuple())
         yield MaxLoadFact(value=self.scenario.max_load)
 
-        for cost in range(self._cost_bound()):
-            yield CostSuccessorFact(value=cost, next_value=cost + 1)
+        if self.strategy_name == "astar":
+            yield LowestOpenNodeFact(node_id=root["id"], f=root["f"])
 
         for pavilion in self.scenario.pavilions:
             yield PavilionFact(
@@ -116,11 +117,11 @@ class FlowerRobotEngine(
             target,
             direction,
         )
-        self._declare_optional_node(child)
+        self._declare_node(child)
 
     def add_load_child(self, parent: Node, option: LoadState) -> None:
         child = self.node_factory.load(parent, self._allocate_node_id(), option)
-        self._declare_optional_node(child)
+        self._declare_node(child)
 
     def add_unload_child(
         self,
@@ -134,7 +135,7 @@ class FlowerRobotEngine(
             pavilion_id,
             option,
         )
-        self._declare_optional_node(child)
+        self._declare_node(child)
 
     def record_tree_node(self, node: Node) -> None:
         self.tree_order.append(node["id"])
@@ -156,10 +157,6 @@ class FlowerRobotEngine(
         )
         self.halt()
 
-    def _declare_optional_node(self, node: Node | None) -> None:
-        if node is not None:
-            self._declare_node(node)
-
     def _declare_node(self, node: Node) -> None:
         state_key = self._state_key(node)
         best_cost = self.best_cost_by_state.get(state_key)
@@ -174,10 +171,6 @@ class FlowerRobotEngine(
     def _allocate_node_id(self) -> int:
         self._next_node_id += 1
         return self._next_node_id
-
-    def _cost_bound(self) -> int:
-        remaining = sum(count for _, _, _, _, count in scenario_needs(self.scenario))
-        return max(100, self.scenario.width * self.scenario.height * max(1, remaining))
 
     def _path_to(self, node_id: int) -> list[dict[str, Any]]:
         path: list[dict[str, Any]] = []
@@ -214,5 +207,7 @@ def run_engine(
         heuristic=heuristic,
     )
     engine.reset()
+    start = time.perf_counter()
     engine.run(max_steps or float("inf"))
+    engine.elapsed_seconds = time.perf_counter() - start
     return engine

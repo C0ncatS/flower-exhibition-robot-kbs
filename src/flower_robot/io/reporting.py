@@ -11,6 +11,8 @@ from flower_robot.engine.search_engine import FlowerRobotEngine
 def print_run_report(engine: FlowerRobotEngine, show_tree: bool = False) -> None:
     print(f"Strategy: {engine.strategy_name}")
     print(f"Generated nodes: {len(engine.node_records)}")
+    if engine.elapsed_seconds is not None:
+        print(f"Solve time: {_format_elapsed(engine.elapsed_seconds)}")
     if engine.solution is None:
         print("No solution found.")
         return
@@ -25,6 +27,12 @@ def print_run_report(engine: FlowerRobotEngine, show_tree: bool = False) -> None
         print("Generated search tree:")
         for node_id in engine.tree_order:
             print(_format_tree_node(engine.node_records[node_id]))
+
+
+def _format_elapsed(seconds: float) -> str:
+    if seconds < 1:
+        return f"{seconds * 1000:.0f} ms"
+    return f"{seconds:.2f} s"
 
 
 def _format_path_step(index: int, step: dict[str, Any]) -> str:

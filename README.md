@@ -145,7 +145,7 @@ flowchart TD
 ```
 
 1. **`load_scenario()`** builds a `Scenario`.
-2. **`FlowerRobotEngine.reset()`** via `@DefFacts` declares grid, warehouse, pavilions, max load, choice-point facts (`LoadOptionFact`, `UnloadOptionFact`, …), A* helpers (`CostLevelFact`, `CostSuccessorFact`), and the root **`Node`** (open, g=0).
+2. **`FlowerRobotEngine.reset()`** via `@DefFacts` declares grid, warehouse, pavilions, max load, choice-point facts (`LoadOptionFact`, `UnloadOptionFact`, …), A* helper (`LowestOpenNodeFact`), and the root **`Node`** (open, g=0).
 3. **`engine.run()`** runs until the agenda is empty or **`halt()`** after a goal.
 
 **Salience (priority) overview:**
@@ -153,7 +153,9 @@ flowchart TD
 | Salience | Rules |
 |---------|--------|
 | 200 | Record node in search tree |
-| 120 | A*: advance current f-level |
+| 350 | A*: update lowest open f |
+| 340 | A*: clear stale lowest-open tracker |
+| 330 | A*: seed lowest-open tracker |
 | 100 | Pick next node (DFS or A*) |
 | 90 | Goal found |
 | 85 | Constraint violations → retract |
@@ -175,7 +177,7 @@ Declared once at reset; unchanged during search.
 | `LoadOptionFact` | One legal warehouse load bundle |
 | `UnloadOptionFact` | One legal unload at a pavilion |
 | `StrategyFact` | `dfs` or `astar` |
-| `CostLevelFact` / `CostSuccessorFact` | A*: scan f-levels without Python `min()` in rules |
+| `LowestOpenNodeFact` | A*: tracks the open node with minimum f without Python `min()` in rules |
 
 Choice enumeration is pushed into facts so operator rules stay thin: each legal load/unload is its own fact, and experta’s matcher fires the same rule once per match.
 
@@ -197,7 +199,7 @@ Children are built in **`search/node_factory.py`** and declared through **`engin
 
 1. **`engine/operators.py`** — Expansion on `Node(status="expanding")`: move, load, unload.
 2. **`engine/constraints.py`** — Retract overloads, illegal mixes, out-of-bounds states, etc.
-3. **`engine/strategy.py`** — DFS: any open node; A*: open nodes at the current f-level.
+3. **`engine/strategy.py`** — DFS: any open node; A*: expand the tracked lowest-f open node.
 4. **`engine/goal.py`** — Empty load and needs → solution + halt.
 5. **`engine/tree.py`** — Optional tree output.
 6. **`engine/search_engine.py`** — Engine mixin, `@DefFacts`, deduplication, solution path.
@@ -218,7 +220,7 @@ Children are built in **`search/node_factory.py`** and declared through **`engin
 
 | | **DFS** | **A\*** |
 |--|---------|---------|
-| Order | Recency + first `open` → `expanding` | Lowest **f** via `CostLevelFact` |
+| Order | Recency + first `open` → `expanding` | Lowest **f** via `LowestOpenNodeFact` |
 | Optimality | Not guaranteed | Yes with admissible **h** (`default_heuristic`) |
 | Tree | `--show-tree` or default when strategy is `dfs` | Solution path; use `--show-tree` to force tree |
 
