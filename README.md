@@ -8,7 +8,7 @@ This document explains the project layout and how a run works end to end, includ
 
 ## Quick start
 
-**Requirements:** Python 3.14+, [uv](https://docs.astral.sh/uv/)
+**Requirements:** Python 3.14+, [uv](https://docs.astral.sh/uv/). Dependencies include [experta](https://github.com/nilp0inter/experta) and [Pyvis](https://pyvis.readthedocs.io/) (interactive tree HTML).
 
 ```bash
 git clone https://github.com/C0ncatS/flower-exhibition-robot-kbs
@@ -28,6 +28,12 @@ uv run python main.py --strategy astar
 ```bash
 # Depth-first search and print the generated search tree
 uv run flower-robot --strategy dfs --show-tree
+
+# Interactive search tree (Pyvis HTML, default: output/search_tree.html)
+uv run flower-robot --strategy astar --tree-html
+
+# Write tree HTML and open it in the browser
+uv run flower-robot --strategy dfs --tree-html --open-tree
 
 # Compare DFS and A* on the default scenario
 uv run flower-robot --strategy both
@@ -50,6 +56,8 @@ On the bundled **5×5** scenario (`scenarios/example.json`), A* typically finds 
 | `--strategy dfs \| astar \| both` | Search strategy (default: `astar`) |
 | `--heuristic default \| zero` | A* heuristic (default: `default`) |
 | `--show-tree` | Print search tree after the run |
+| `--tree-html [PATH]` | Write interactive Pyvis HTML (default: `output/search_tree.html`) |
+| `--open-tree` | Open the generated tree HTML in the default browser |
 | `--max-steps N` | Stop after N experta activations |
 
 ---
@@ -88,12 +96,16 @@ Search states live in **`Node` facts**, not hidden globals. Rules match `open` o
 
 ## Repository layout
 
+Tracked source and configuration (see `.gitignore` for generated paths):
+
 ```
 .
 ├── main.py                      # Entry: flower_robot.cli.main
+├── pyproject.toml               # Package metadata, deps, flower-robot script
+├── uv.lock                      # Locked dependencies (uv sync)
+├── .python-version              # Python 3.14
 ├── scenarios/
 │   └── example.json             # Default 5×5 instance
-├── knowledge_base_assignment.md # Original problem statement (Arabic)
 └── src/flower_robot/
     ├── compat.py                # Python 3.14 shim for experta / frozendict
     ├── cli.py                   # Arguments and run loop
@@ -101,6 +113,7 @@ Search states live in **`Node` facts**, not hidden globals. Rules match `open` o
     │   ├── models.py            # Scenario, Pavilion
     │   ├── state.py             # Load / needs tuples, validity
     │   ├── choices.py           # Adjacency, load, unload options
+    │   ├── navigation.py        # Useful-move pruning (Manhattan toward targets)
     │   ├── position.py          # Grid positions, Manhattan distance
     │   └── flowers.py           # Flower types and colors
     ├── facts/
@@ -116,13 +129,22 @@ Search states live in **`Node` facts**, not hidden globals. Rules match `open` o
     │   ├── goal.py              # Goal → Solution + halt
     │   └── tree.py              # Tree recording for printing
     └── io/
-        ├── scenario_loader.py
-        └── reporting.py
+        ├── scenario_loader.py   # Load JSON scenarios
+        ├── reporting.py         # Console solution path and tree output
+        └── tree_viz.py          # Pyvis interactive search-tree HTML
 ```
+
+**Generated at runtime (gitignored):**
+
+| Path | Created by |
+|------|------------|
+| `output/` | `--tree-html` (default: `output/search_tree.html`) |
+| `lib/` | Pyvis assets referenced by the tree HTML |
+| `.venv/` | `uv sync` |
 
 **Layers:**
 
-- **`domain/`** — problem logic and precomputation (loops and conditionals are fine).
+- **`domain/`** — problem logic and precomputation (loops and conditionals are fine), including move pruning via `navigation.py`.
 - **`facts/`** — shapes stored in working memory.
 - **`engine/`** — when rules fire and what they change.
 - **`search/`** — child states and scoring.
@@ -197,7 +219,7 @@ Children are built in **`search/node_factory.py`** and declared through **`engin
 
 ## Rules (reading order)
 
-1. **`engine/operators.py`** — Expansion on `Node(status="expanding")`: move, load, unload.
+1. **`engine/operators.py`** — Expansion on `Node(status="expanding")`: move (with useful-move pruning), load, unload.
 2. **`engine/constraints.py`** — Retract overloads, illegal mixes, out-of-bounds states, etc.
 3. **`engine/strategy.py`** — DFS: any open node; A*: expand the tracked lowest-f open node.
 4. **`engine/goal.py`** — Empty load and needs → solution + halt.
@@ -222,7 +244,8 @@ Children are built in **`search/node_factory.py`** and declared through **`engin
 |--|---------|---------|
 | Order | Recency + first `open` → `expanding` | Lowest **f** via `LowestOpenNodeFact` |
 | Optimality | Not guaranteed | Yes with admissible **h** (`default_heuristic`) |
-| Tree | `--show-tree` or default when strategy is `dfs` | Solution path; use `--show-tree` to force tree |
+| Console tree | `--show-tree` or default when strategy is `dfs` | Solution path; use `--show-tree` to force tree |
+| HTML tree | `--tree-html` (writes `output/search_tree.html` by default) | Same; with `--strategy both`, files are suffixed `_dfs` / `_astar` |
 
 Heuristics (`search/heuristics.py`):
 
@@ -266,15 +289,25 @@ experta relies on deprecated APIs (`collections.Mapping`). Import **`flower_robo
 
 ---
 
+## Interactive search tree
+
+`--tree-html` builds a hierarchical Pyvis graph from `engine.node_records`. Nodes show action, **g**, and **f**; the solution path is highlighted in green. Use `--open-tree` to launch the file in your browser after the run.
+
+When `--strategy both` is used with `--tree-html`, outputs are written as `search_tree_dfs.html` and `search_tree_astar.html` (stem/suffix derived from the path you pass).
+
+---
+
 ## Learning path
 
 | Topic | Where to look |
 |-------|----------------|
 | Initial state as facts | `engine/search_engine.py` → `scenario_facts`, root `Node` |
 | Move / load / unload | `engine/operators.py` |
+| Useful-move pruning | `domain/navigation.py`, `TEST` guards in `operators.py` |
 | Constraints | `engine/constraints.py` |
 | Goal and solution path | `engine/goal.py`, `record_solution` in `search_engine.py` |
-| Search tree output | `engine/tree.py`, `io/reporting.py` |
+| Console tree output | `engine/tree.py`, `io/reporting.py` |
+| HTML tree visualization | `io/tree_viz.py` |
 | A* (f = g + h) | `search/node_factory.py`, `search/heuristics.py`, `engine/strategy.py` |
 | Full problem narrative | `knowledge_base_assignment.md` |
 
