@@ -40,5 +40,13 @@ class Node(Fact):
     """A search-tree node carrying the full world state."""
 
 
+class CandidateNode(Fact):
+    """A generated child awaiting duplicate-state pruning."""
+
+
+class StateBestCostFact(Fact):
+    """Best g-cost seen so far for a world state (pos, load, needs)."""
+
+
 class Solution(Fact):
     """A found solution path."""

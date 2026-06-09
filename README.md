@@ -181,6 +181,7 @@ flowchart TD
 | 100 | Pick next node (DFS or A*) |
 | 90 | Goal found |
 | 85 | Constraint violations → retract |
+| 75 | Duplicate-state pruning (candidate → open node) |
 | 50 | Operators (move / load / unload) |
 | -100 | Mark expanded node closed |
 
@@ -200,6 +201,7 @@ Declared once at reset; unchanged during search.
 | `UnloadOptionFact` | One legal unload at a pavilion |
 | `StrategyFact` | `dfs` or `astar` |
 | `LowestOpenNodeFact` | A*: tracks the open node with minimum f without Python `min()` in rules |
+| `CandidateNode` / `StateBestCostFact` | Duplicate-state pruning without Python `if` in rule bodies |
 
 Choice enumeration is pushed into facts so operator rules stay thin: each legal load/unload is its own fact, and experta’s matcher fires the same rule once per match.
 
@@ -213,18 +215,19 @@ Choice enumeration is pushed into facts so operator rules stay thin: each legal 
 | `status` | `open` \| `expanding` \| `closed` |
 | `parent`, `action` | Solution path reconstruction |
 
-Children are built in **`search/node_factory.py`** and declared through **`engine.declare()`**, with duplicate pruning in `_declare_node`.
+Children are built in **`search/node_factory.py`**, queued as **`CandidateNode`** facts, and promoted by **`engine/dedup.py`** rules when no better path to the same state exists.
 
 ---
 
 ## Rules (reading order)
 
 1. **`engine/operators.py`** — Expansion on `Node(status="expanding")`: move (with useful-move pruning), load, unload.
-2. **`engine/constraints.py`** — Retract overloads, illegal mixes, out-of-bounds states, etc.
-3. **`engine/strategy.py`** — DFS: any open node; A*: expand the tracked lowest-f open node.
-4. **`engine/goal.py`** — Empty load and needs → solution + halt.
-5. **`engine/tree.py`** — Optional tree output.
-6. **`engine/search_engine.py`** — Engine mixin, `@DefFacts`, deduplication, solution path.
+2. **`engine/dedup.py`** — Promote `CandidateNode` to `Node` or reject duplicates via `StateBestCostFact`.
+3. **`engine/constraints.py`** — Retract overloads, illegal mixes, out-of-bounds states, etc.
+4. **`engine/strategy.py`** — DFS: any open node; A*: expand the tracked lowest-f open node.
+5. **`engine/goal.py`** — Empty load and needs → solution + halt.
+6. **`engine/tree.py`** — Optional tree output.
+7. **`engine/search_engine.py`** — Engine mixin, `@DefFacts`, solution path.
 
 ### Where loops belong
 
@@ -234,7 +237,7 @@ Children are built in **`search/node_factory.py`** and declared through **`engin
 | `@DefFacts scenario_facts` | Yes — bootstrap static facts |
 | `domain/choices.py` | Yes — precompute options before `run()` |
 | `search/node_factory.py` | Yes — g, h, transition checks |
-| `_declare_node` | Yes — closed-set deduplication |
+| `engine/dedup.py` | No — duplicate pruning via `TEST` / `NOT` on the LHS |
 
 ---
 
@@ -249,7 +252,7 @@ Children are built in **`search/node_factory.py`** and declared through **`engin
 
 Heuristics (`search/heuristics.py`):
 
-- **`default`** — Underestimates remaining load/unload work and travel.
+- **`default`** — Tighter lower bound using a Minimum Spanning Tree (MST) of remaining targets and mandatory operation costs.
 - **`zero`** — h = 0 (uniform-cost behavior).
 
 ---

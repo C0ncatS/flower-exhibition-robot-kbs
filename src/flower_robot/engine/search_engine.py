@@ -11,11 +11,13 @@ from flower_robot.domain.choices import build_load_options, build_unload_options
 from flower_robot.domain.models import Scenario
 from flower_robot.domain.state import LoadState, NeedsState, scenario_needs
 from flower_robot.engine.constraints import ConstraintRules
+from flower_robot.engine.dedup import DedupRules
 from flower_robot.engine.goal import GoalRules
 from flower_robot.engine.operators import OperatorRules
 from flower_robot.engine.strategy import StrategyRules
 from flower_robot.engine.tree import TreeRules
 from flower_robot.facts.schema import (
+    CandidateNode,
     GridFact,
     LoadOptionFact,
     LowestOpenNodeFact,
@@ -23,6 +25,7 @@ from flower_robot.facts.schema import (
     Node,
     PavilionFact,
     Solution,
+    StateBestCostFact,
     StrategyFact,
     UnloadOptionFact,
     WarehouseFact,
@@ -35,6 +38,7 @@ class FlowerRobotEngine(
     TreeRules,
     GoalRules,
     ConstraintRules,
+    DedupRules,
     OperatorRules,
     StrategyRules,
     KnowledgeEngine,
@@ -50,7 +54,6 @@ class FlowerRobotEngine(
         self.node_factory = NodeFactory(scenario, heuristic)
         self.node_records: dict[int, dict[str, Any]] = {}
         self.tree_order: list[int] = []
-        self.best_cost_by_state: dict[tuple[Any, ...], int] = {}
         self.solution: dict[str, Any] | None = None
         self.elapsed_seconds: float | None = None
         self._next_node_id = 0
@@ -59,7 +62,6 @@ class FlowerRobotEngine(
     def reset(self, **kwargs: Any) -> None:
         self.node_records = {}
         self.tree_order = []
-        self.best_cost_by_state = {}
         self.solution = None
         self.elapsed_seconds = None
         self._next_node_id = 0
@@ -69,9 +71,14 @@ class FlowerRobotEngine(
     def scenario_facts(self):
         root = self.node_factory.root(self._allocate_node_id())
         self._remember_node(root)
-        self.best_cost_by_state[self._state_key(root)] = root["g"]
 
         yield StrategyFact(name=self.strategy_name)
+        yield StateBestCostFact(
+            pos=root["pos"],
+            load=root["load"],
+            needs=root["needs"],
+            best_g=root["g"],
+        )
         yield GridFact(width=self.scenario.width, height=self.scenario.height)
         yield WarehouseFact(position=self.scenario.warehouse.as_tuple())
         yield MaxLoadFact(value=self.scenario.max_load)
@@ -117,11 +124,11 @@ class FlowerRobotEngine(
             target,
             direction,
         )
-        self._declare_node(child)
+        self._queue_candidate(child)
 
     def add_load_child(self, parent: Node, option: LoadState) -> None:
         child = self.node_factory.load(parent, self._allocate_node_id(), option)
-        self._declare_node(child)
+        self._queue_candidate(child)
 
     def add_unload_child(
         self,
@@ -135,7 +142,7 @@ class FlowerRobotEngine(
             pavilion_id,
             option,
         )
-        self._declare_node(child)
+        self._queue_candidate(child)
 
     def record_tree_node(self, node: Node) -> None:
         self.tree_order.append(node["id"])
@@ -157,13 +164,45 @@ class FlowerRobotEngine(
         )
         self.halt()
 
-    def _declare_node(self, node: Node) -> None:
-        state_key = self._state_key(node)
-        best_cost = self.best_cost_by_state.get(state_key)
-        if best_cost is None or node["g"] < best_cost:
-            self.best_cost_by_state[state_key] = node["g"]
-            self._remember_node(node)
-            self.declare(node)
+    def _queue_candidate(self, node: Node) -> None:
+        self.declare(
+            CandidateNode(
+                id=node["id"],
+                pos=node["pos"],
+                load=node["load"],
+                load_count=node["load_count"],
+                load_valid=node["load_valid"],
+                needs=node["needs"],
+                g=node["g"],
+                h=node["h"],
+                f=node["f"],
+                parent=node["parent"],
+                action=node["action"],
+                action_kind=node["action_kind"],
+                action_valid=node["action_valid"],
+            )
+        )
+
+    def _promote_candidate(self, candidate: CandidateNode) -> None:
+        node = Node(
+            id=candidate["id"],
+            pos=candidate["pos"],
+            load=candidate["load"],
+            load_count=candidate["load_count"],
+            load_valid=candidate["load_valid"],
+            needs=candidate["needs"],
+            g=candidate["g"],
+            h=candidate["h"],
+            f=candidate["f"],
+            status="open",
+            parent=candidate["parent"],
+            action=candidate["action"],
+            action_kind=candidate["action_kind"],
+            action_valid=candidate["action_valid"],
+            tree_recorded=False,
+        )
+        self._remember_node(node)
+        self.declare(node)
 
     def _remember_node(self, node: Node) -> None:
         self.node_records[node["id"]] = node.as_dict()
@@ -180,17 +219,6 @@ class FlowerRobotEngine(
             path.append(record)
             current = record["parent"]
         return list(reversed(path))
-
-    def _state_key(self, node: Node) -> tuple[Any, ...]:
-        return (
-            tuple(node["pos"]),
-            _tuple_state(node["load"]),
-            _tuple_state(node["needs"]),
-        )
-
-
-def _tuple_state(value: LoadState | NeedsState) -> tuple[tuple[Any, ...], ...]:
-    return tuple(tuple(item) for item in value)
 
 
 def run_engine(
