@@ -179,7 +179,6 @@ class FlowerRobotEngine(
                 parent=node["parent"],
                 action=node["action"],
                 action_kind=node["action_kind"],
-                action_valid=node["action_valid"],
             )
         )
 
@@ -198,7 +197,6 @@ class FlowerRobotEngine(
             parent=candidate["parent"],
             action=candidate["action"],
             action_kind=candidate["action_kind"],
-            action_valid=candidate["action_valid"],
             tree_recorded=False,
         )
         self._remember_node(node)

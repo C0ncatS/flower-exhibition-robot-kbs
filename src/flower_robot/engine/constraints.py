@@ -20,10 +20,6 @@ class ConstraintRules:
     def reject_illegal_load_mix(self, node):
         self.retract(node)
 
-    @Rule(AS.node << Node(status="open", action_valid=False), salience=85)
-    def reject_invalid_operator_result(self, node):
-        self.retract(node)
-
     @Rule(
         AS.node << Node(status="open", pos=MATCH.pos),
         GridFact(width=MATCH.width, height=MATCH.height),

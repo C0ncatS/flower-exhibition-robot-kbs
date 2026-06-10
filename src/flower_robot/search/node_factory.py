@@ -35,7 +35,6 @@ class NodeFactory:
             parent=None,
             action="start",
             action_kind="start",
-            action_valid=True,
         )
 
     def move(
@@ -54,7 +53,6 @@ class NodeFactory:
             parent=parent["id"],
             action=f"move {direction} to {tuple(target)}",
             action_kind="move",
-            action_valid=True,
         )
 
     def load(self, parent: Node, node_id: int, option: LoadState) -> Node:
@@ -68,7 +66,6 @@ class NodeFactory:
             parent=parent["id"],
             action=f"load {format_items(load)}",
             action_kind="load",
-            action_valid=True,
         )
 
     def unload(
@@ -92,7 +89,6 @@ class NodeFactory:
             parent=parent["id"],
             action=f"unload at {pavilion_id}: {format_items(unload)}",
             action_kind="unload",
-            action_valid=True,
         )
 
     def _node(
@@ -106,7 +102,6 @@ class NodeFactory:
         parent: int | None,
         action: str,
         action_kind: str,
-        action_valid: bool,
     ) -> Node:
         h = self._heuristic(position, load, needs, self._scenario.warehouse.as_tuple())
         return Node(
@@ -123,7 +118,6 @@ class NodeFactory:
             parent=parent,
             action=action,
             action_kind=action_kind,
-            action_valid=action_valid,
             tree_recorded=False,
         )
 
