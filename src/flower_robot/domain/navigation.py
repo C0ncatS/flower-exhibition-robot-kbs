@@ -34,16 +34,6 @@ def is_useful_move(
     if not targets:
         return False
 
-    # Bounding Box Pruning:
-    # A move that takes the robot outside the axis-aligned bounding box 
-    # containing the robot and all its current targets is never optimal.
-    all_x = [p[0] for p in targets] + [position[0]]
-    all_y = [p[1] for p in targets] + [position[1]]
-    
-    if not (min(all_x) <= target[0] <= max(all_x) and 
-            min(all_y) <= target[1] <= max(all_y)):
-        return False
-
     return any(
         manhattan(target, destination) < manhattan(position, destination)
         for destination in targets
